@@ -1,0 +1,97 @@
+#!/bin/bash
+
+RED="\e[31m"
+GREEN="\e[32m"
+YELLOW="\e[33m"
+BLUE="\e[34m"
+RESET="\e[0m"
+
+if ! command -v cast >/dev/null 2>&1; then
+    echo -e "${RED}cast is not installed${RESET}"
+    exit 1
+fi
+
+echo -e "\n\n"
+echo -e "${BLUE}███████╗████████╗ ██████╗ ██████╗ ███████╗ █████╗ ██████╗ ███████╗██████╗ 
+██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝██╔══██╗██╔══██╗██╔════╝██╔══██╗
+███████╗   ██║   ██║   ██║██████╔╝█████╗  ███████║██║  ██║█████╗  ██████╔╝
+╚════██║   ██║   ██║   ██║██╔══██╗██╔══╝  ██╔══██║██║  ██║██╔══╝  ██╔══██╗
+███████║   ██║   ╚██████╔╝██║  ██║███████╗██║  ██║██████╔╝███████╗██║  ██║
+╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝${RESET}"
+echo "1) mainnet            2) sepolia"
+echo "3) holesky            4) custom RPC"
+
+echo -e "\n\n"
+read -p "Choice: " choice
+
+case $choice in
+    1) RPC="https://ethereum.publicnode.com" ;;
+    2) RPC="https://ethereum-sepolia.publicnode.com" ;;
+    3) RPC="https://ethereum-holesky.publicnode.com" ;;
+    4) read -p "RPC URL: " RPC ;;
+    *) echo -e "${RED}Invalid choice${RESET}" ; exit 1 ;;
+esac
+
+read -p "Contract address: " CONTRACT
+read -p "Max slots to scan: " MAX
+
+timestamp=$(date +%s)
+outfile="storage_${CONTRACT}_${timestamp}.json"
+
+echo "{" > "$outfile"
+echo "  \"rpc\": \"$RPC\"," >> "$outfile"
+echo "  \"contract\": \"$CONTRACT\"," >> "$outfile"
+echo "  \"slots\": [" >> "$outfile"
+
+first=true
+previous=-1
+struct=0
+
+echo -e "\n${BLUE}Reading storage...${RESET}"
+echo -e "Export: ${GREEN}$outfile${RESET}\n"
+
+for ((slot=0; slot<MAX; slot++)); do
+    value=$(cast storage --rpc-url "$RPC" "$CONTRACT" "$slot" 2>/dev/null)
+
+    if [[ $? -ne 0 ]]; then
+        continue
+    fi
+
+    if [[ "$value" =~ ^0x0+$ ]]; then
+        continue
+    fi
+
+    echo -e "${GREEN}Slot $slot : $value${RESET}"
+
+    if [[ "$value" =~ ^0x[0-9a-fA-F]{1,62}$ ]]; then
+        echo -e "${YELLOW}[Array?]${RESET}"
+    fi
+
+    if [[ "$value" =~ ^0x[0-9a-fA-F]{60,64}$ ]]; then
+        echo -e "${YELLOW}[Mapping?]${RESET}"
+    fi
+
+    if (( previous + 1 == slot )); then
+        ((struct++))
+        if ((struct >= 2)); then
+            echo -e "${BLUE}[Struct?]${RESET}"
+        fi
+    else
+        struct=0
+    fi
+
+    if [ "$first" = true ]; then
+        echo "    { \"slot\": $slot, \"value\": \"$value\" }" >> "$outfile"
+        first=false
+    else
+        echo "    ,{ \"slot\": $slot, \"value\": \"$value\" }" >> "$outfile"
+    fi
+
+    previous=$slot
+done
+
+echo "  ]" >> "$outfile"
+echo "}" >> "$outfile"
+
+echo -e "\n${GREEN}Done${RESET}"
+echo -e "${YELLOW}JSON saved to:$RESET $outfile"
