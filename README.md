@@ -16,7 +16,6 @@
 ## Prerequisites
 
 - Linux/macOS system with Bash.
-- [Foundry](https://getfoundry.sh/) installed (`cast` must be available).
 
 ---
 
